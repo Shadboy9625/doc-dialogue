@@ -1,32 +1,25 @@
 import { db } from "@/db";
+import { openai } from "@/lib/openai";
+import { pinecone } from "@/lib/pinecone";
 import { SendMessageValidator } from "@/lib/validators/SendMessageValidator";
 import { getKindeServerSession } from "@kinde-oss/kinde-auth-nextjs/server";
 import { OpenAIEmbeddings } from "langchain/embeddings/openai";
-import { NextRequest } from "next/server";
-import { pinecone } from "@/lib/pinecone";
 import { PineconeStore } from "langchain/vectorstores/pinecone";
-import { openai } from "@/lib/openai";
+import { NextRequest } from "next/server";
+
 import { OpenAIStream, StreamingTextResponse } from "ai";
 
-interface SearchResult {
-  pageContent: string;
-  metadata: {
-    fileName: string;
-  };
-}
-
-function customFilter(result: SearchResult, targetFileName: string): boolean {
-  return result.metadata?.fileName === targetFileName;
-}
 export const POST = async (req: NextRequest) => {
-  // endpoint for asking a question to a PDF file
+  // this is an endpoint for passing request/question to the pdf file
 
   const body = await req.json();
+
   const { getUser } = getKindeServerSession();
   const user = getUser();
 
   const { id: userId } = user;
-  if (!userId) return new Response("unauthorized", { status: 401 });
+
+  if (!userId) return new Response("Unauthorized", { status: 401 });
 
   const { fileId, message } = SendMessageValidator.parse(body);
 
@@ -37,7 +30,7 @@ export const POST = async (req: NextRequest) => {
     },
   });
 
-  if (!file) return new Response("Not Found", { status: 404 });
+  if (!file) return new Response("Not found", { status: 404 });
 
   await db.message.create({
     data: {
@@ -48,20 +41,20 @@ export const POST = async (req: NextRequest) => {
     },
   });
 
-  // 1: Vectorize message
+  // 1: vectorize message
   const embeddings = new OpenAIEmbeddings({
     openAIApiKey: process.env.OPENAI_API_KEY,
   });
 
-  const pineconeIndex = pinecone.Index("DocDialogue"); // Use a single index name
+  const pineconeIndex = pinecone.Index("cadispdf");
 
   const vectorStore = await PineconeStore.fromExistingIndex(embeddings, {
-    //@ts-ignore
     pineconeIndex,
   });
 
   const results = await vectorStore.similaritySearch(message, 4);
-  const prevMessage = await db.message.findMany({
+
+  const prevMessages = await db.message.findMany({
     where: {
       fileId,
     },
@@ -71,10 +64,11 @@ export const POST = async (req: NextRequest) => {
     take: 6,
   });
 
-  const formattedPrevMessages = prevMessage.map((msg) => ({
+  const formattedPrevMessages = prevMessages.map((msg) => ({
     role: msg.isUserMessage ? ("user" as const) : ("assistant" as const),
     content: msg.text,
   }));
+
   const response = await openai.chat.completions.create({
     model: "gpt-3.5-turbo",
     temperature: 0,
