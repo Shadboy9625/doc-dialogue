@@ -47,7 +47,6 @@ export function constructMetadata({
     },
     icons,
     metadataBase: new URL("https://query-pdf.vercel.app"),
-    themeColor: "#FFF",
     ...(noIndex && {
       robots: {
         index: false,
